@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "rails/generators"
 require "rails/generators/base"
 
@@ -12,10 +14,10 @@ module PulseZero
           generate "action_cable:install"
         end
 
-        unless File.exist?("app/frontend")
-          say "This generator is designed for Inertia.js applications with app/frontend directory", :red
-          exit 1
-        end
+        return if File.exist?("app/frontend")
+
+        say "This generator is designed for Inertia.js applications with app/frontend directory", :red
+        exit 1
       end
 
       def setup_action_cable
@@ -92,10 +94,10 @@ module PulseZero
       end
 
       def install_npm_dependencies
-        if File.exist?("package.json")
-          say "Installing @rails/actioncable...", :green
-          run "npm install @rails/actioncable"
-        end
+        return unless File.exist?("package.json")
+
+        say "Installing @rails/actioncable...", :green
+        run "npm install @rails/actioncable"
       end
 
       def add_pulse_to_autoload_paths
@@ -104,25 +106,25 @@ module PulseZero
         application_content = File.read(application_file)
 
         # Add to autoload_lib if not already there
-        unless application_content.include?("config.autoload_lib")
-          inject_into_file application_file, after: /class Application < Rails::Application\n/ do
-            <<-RUBY
+        return if application_content.include?("config.autoload_lib")
+
+        inject_into_file application_file, after: /class Application < Rails::Application\n/ do
+          <<-RUBY
     # Autoload lib directory
     config.autoload_lib(ignore: %w[assets tasks])
 
-            RUBY
-          end
+          RUBY
         end
       end
 
       def setup_application_controller
         # Check if already included
         controller_content = File.read("app/controllers/application_controller.rb")
-        unless controller_content.include?("Pulse::RequestIdTracking")
-          inject_into_class "app/controllers/application_controller.rb",
-                            "ApplicationController" do
-            "  include Pulse::RequestIdTracking\n"
-          end
+        return if controller_content.include?("Pulse::RequestIdTracking")
+
+        inject_into_class "app/controllers/application_controller.rb",
+                          "ApplicationController" do
+          "  include Pulse::RequestIdTracking\n"
         end
       end
 

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative "pulse_zero/version"
 
 module PulseZero

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "test_helper"
 require "fileutils"
 require "tmpdir"
@@ -53,21 +55,35 @@ class TestInstallGenerator < Minitest::Test
     templates_dir = File.expand_path("../lib/generators/pulse_zero/install/templates", __dir__)
 
     Dir.glob(File.join(templates_dir, "**/*.tt")).each do |template_file|
-      content = File.read(template_file)
-      # Basic check that the file is not empty
-      refute content.strip.empty?, "Template #{template_file} should not be empty"
-
-      # Check that Ruby files have valid syntax (basic check)
-      if template_file.end_with?(".rb.tt")
-        assert content.include?("module") || content.include?("class") || content.include?("Rails"),
-               "Ruby template #{template_file} should contain valid Ruby code"
-      end
-
-      # Check that TypeScript files have valid syntax (basic check)
-      if template_file.end_with?(".ts.tt")
-        assert content.include?("export") || content.include?("import") || content.include?("interface") || content.include?("function"),
-               "TypeScript template #{template_file} should contain valid TypeScript code"
-      end
+      validate_template_file(template_file)
     end
+  end
+
+  private
+
+  def validate_template_file(template_file)
+    content = File.read(template_file)
+    refute content.strip.empty?, "Template #{template_file} should not be empty"
+
+    validate_ruby_template(template_file, content) if template_file.end_with?(".rb.tt")
+    validate_typescript_template(template_file, content) if template_file.end_with?(".ts.tt")
+  end
+
+  def validate_ruby_template(template_file, content)
+    assert ruby_code_present?(content),
+           "Ruby template #{template_file} should contain valid Ruby code"
+  end
+
+  def validate_typescript_template(template_file, content)
+    assert typescript_code_present?(content),
+           "TypeScript template #{template_file} should contain valid TypeScript code"
+  end
+
+  def ruby_code_present?(content)
+    content.include?("module") || content.include?("class") || content.include?("Rails")
+  end
+
+  def typescript_code_present?(content)
+    %w[export import interface function].any? { |keyword| content.include?(keyword) }
   end
 end

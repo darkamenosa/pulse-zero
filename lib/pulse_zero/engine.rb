@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module PulseZero
   # Only define the engine if Rails is loaded
   if defined?(Rails::Engine)
