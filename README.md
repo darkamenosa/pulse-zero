@@ -60,11 +60,11 @@ rails generate pulse_zero:install
 class Post < ApplicationRecord
   include Pulse::Broadcastable
   
-  # Broadcast to account-scoped channel
-  broadcasts_to ->(post) { [post.account, "posts"] }
+  # Broadcast to a simple channel
+  broadcasts_to ->(post) { "posts" }
   
-  # Or broadcast to a simple channel
-  broadcasts "posts"
+  # Or broadcast to account-scoped channel
+  # broadcasts_to ->(post) { [post.account, "posts"] }
 end
 ```
 
@@ -73,40 +73,105 @@ end
 ```ruby
 class PostsController < ApplicationController
   def index
-    @posts = Current.account.posts
-    @pulse_stream = Pulse::Streams::StreamName
-      .signed_stream_name([Current.account, "posts"])
+    @posts = Post.all
+
+    render inertia: "Post/Index", props: {
+      posts: @posts.map do |post|
+        serialize_post(post)
+      end,
+      pulseStream: Pulse::Streams::StreamName.signed_stream_name("posts")
+    }
+  end
+  
+  private
+  
+  def serialize_post(post)
+    {
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      created_at: post.created_at
+    }
   end
 end
 ```
 
+**Why pulseStream?** Following Turbo Rails' security model, Pulse uses signed stream names to prevent unauthorized access to WebSocket channels. Since Inertia.js doesn't have a built-in way to access streams like Turbo does, we pass the signed stream name as a prop. This approach:
+- Maintains security through cryptographically signed tokens
+- Works naturally with Inertia's prop system
+- Keeps the API simple and explicit
+
 ### 3. Subscribe in React Component
 
 ```tsx
+import { useState } from 'react'
 import { usePulse } from '@/hooks/use-pulse'
 import { useVisibilityRefresh } from '@/hooks/use-visibility-refresh'
 import { router } from '@inertiajs/react'
 
-export default function Posts({ posts, pulseStream }) {
-  // Handle tab visibility
+interface IndexProps {
+  posts: Array<{
+    id: number
+    title: string
+    content: string
+    created_at: string
+  }>
+  pulseStream: string
+  flash: {
+    success?: string
+    error?: string
+  }
+}
+
+export default function Index({ posts: initialPosts, flash, pulseStream }: IndexProps) {
+  // Use local state for posts to enable real-time updates
+  const [posts, setPosts] = useState(initialPosts)
+  
+  // Automatically refresh data when returning to the tab after 30+ seconds
+  // This ensures users see fresh data after being away, handling cases where
+  // WebSocket messages might have been missed during browser suspension
   useVisibilityRefresh(30, () => {
     router.reload({ only: ['posts'] })
   })
-  
-  // Subscribe to real-time updates
+
+  // Subscribe to Pulse updates for real-time changes
   usePulse(pulseStream, (message) => {
     switch (message.event) {
       case 'created':
+        // Add the new post to the beginning of the list
+        setPosts(prev => [message.payload, ...prev])
+        break
       case 'updated':
+        // Replace the updated post in the list
+        setPosts(prev => 
+          prev.map(post => post.id === message.payload.id ? message.payload : post)
+        )
+        break
       case 'deleted':
-        router.reload({ only: ['posts'] })
+        // Remove the deleted post from the list
+        setPosts(prev => 
+          prev.filter(post => post.id !== message.payload.id)
+        )
+        break
+      case 'refresh':
+        // Full reload for refresh events
+        router.reload()
         break
     }
   })
   
-  return <PostsList posts={posts} />
+  return (
+    <>
+      {flash.success && <div className="alert-success">{flash.success}</div>}
+      <PostsList posts={posts} />
+    </>
+  )
 }
 ```
+
+**Note:** This example shows optimistic UI updates using local state. Alternatively, you can use `router.reload({ only: ['posts'] })` for all events to fetch fresh data from the server, which ensures consistency but may feel less responsive.
+
+**Why useVisibilityRefresh?** When users switch tabs or minimize their browser, WebSocket connections can be suspended and messages may be lost. The `useVisibilityRefresh` hook detects when users return to your app and automatically refreshes the data if they've been away for more than the specified threshold (30 seconds in this example). This ensures users always see up-to-date information without manual refreshing.
 
 ## Broadcasting Events
 
