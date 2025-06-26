@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Real-time broadcasting generator for Rails + Inertia"
   spec.description = "Generate a complete real-time broadcasting system for Rails applications using " \
                      "Inertia.js with React. All code is generated into your project with zero runtime dependencies."
-  spec.homepage = "https://github.com/darkamenosa/pulse_zero"
+  spec.homepage = "https://github.com/darkamenosa/pulse-zero"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0.0"
 
