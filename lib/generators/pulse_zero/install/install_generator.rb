@@ -131,31 +131,55 @@ module PulseZero
       def create_documentation
         template "docs/PULSE_USAGE.md.tt", "docs/PULSE_USAGE.md"
 
-        say "\n✅ Pulse real-time broadcasting has been installed!", :green
+        say "\n✅ Pulse Zero has been installed!", :green
+        say "🚀 Real-time broadcasting system generated with zero runtime dependencies", :blue
         say "\n⚠️  IMPORTANT: Configure authentication!", :yellow
         say "The default ApplicationCable connection accepts all connections."
         say "Edit app/channels/application_cable/connection.rb to add your authentication logic."
-        say "\nNext steps:", :yellow
-        say "1. Configure authentication in app/channels/application_cable/connection.rb"
-        say "2. Read docs/PULSE_USAGE.md for complete setup instructions"
-        say "3. Add 'include Pulse::Broadcastable' to models that need broadcasting"
-        say "4. Use 'usePulse' hook in your React components"
-        say "\nExample:", :blue
+        say "\nWhat was generated:", :yellow
+        say "• Backend: Broadcasting system in lib/pulse/, models, controllers, channels, and jobs"
+        say "• Frontend: TypeScript WebSocket management and React hooks"
+        say "• Security: Signed streams for secure channel subscriptions"
+        say "• Features: Auto-reconnection, tab suspension handling, and more"
+        say "\nQuick start:", :blue
         say <<~EXAMPLE
-          # In your model:
+          # 1. Enable broadcasting on a model:
           class Post < ApplicationRecord
             include Pulse::Broadcastable
-            broadcasts_to ->(post) { [post.account, "posts"] }
+            broadcasts_to ->(post) { "posts" }
           end
 
-          # In your controller:
-          @pulse_stream = Pulse::Streams::StreamName.signed_stream_name([Current.account, "posts"])
+          # 2. Pass stream token to frontend:
+          render inertia: "Post/Index", props: {
+            posts: @posts,
+            pulseStream: Pulse::Streams::StreamName.signed_stream_name("posts")
+          }
 
-          # In your React component:
+          # 3. Subscribe in React component:
           usePulse(pulseStream, (message) => {
-            router.reload({ only: ['posts'] })
+            switch (message.event) {
+              case 'created':
+                setPosts(prev => [message.payload, ...prev])
+                break
+              case 'updated':
+                setPosts(prev => 
+                  prev.map(post => post.id === message.payload.id ? message.payload : post)
+                )
+                break
+              case 'deleted':
+                setPosts(prev => prev.filter(post => post.id !== message.payload.id))
+                break
+              case 'refresh':
+                router.reload()
+                break
+            }
           })
         EXAMPLE
+        say "\nNext steps:", :yellow
+        say "1. Configure authentication in app/channels/application_cable/connection.rb"
+        say "2. Read docs/PULSE_USAGE.md for complete documentation"
+        say "3. Enable debug logging: localStorage.setItem('PULSE_DEBUG', 'true')"
+        say "\nInspired by Turbo Rails • Full ownership of generated code • Customize everything!"
       end
 
       private

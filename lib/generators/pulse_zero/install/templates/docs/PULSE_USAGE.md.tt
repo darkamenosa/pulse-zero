@@ -1,110 +1,142 @@
-# Pulse Real-time Broadcasting Guide
+# Pulse Zero Usage Guide
 
-## Overview
+## What is Pulse Zero?
 
-Pulse is a real-time broadcasting system that keeps your UI in sync with database changes. It's designed for Inertia.js + React applications, broadcasting JSON messages through WebSockets.
+Pulse Zero generated a complete real-time broadcasting system directly into your Rails application. Unlike traditional gems, all code is now part of your project, giving you full ownership and the ability to customize everything.
+
+Inspired by Turbo Rails, Pulse brings familiar broadcasting patterns to Inertia.js applications. If you've used `broadcasts_to` in Turbo Rails, you'll feel right at home with Pulse's API.
+
+Features:
+- 🚀 WebSocket broadcasting via ActionCable
+- 🔒 Secure signed streams
+- 📱 Browser tab suspension handling
+- 🔄 Automatic reconnection with exponential backoff
+- 📦 TypeScript support for Inertia + React
+- 🎯 Zero runtime dependencies
+- 🏗️ Turbo Rails-inspired API design
 
 ## Quick Start
 
 ### 1. Enable Broadcasting on a Model
 
-Add `include Pulse::Broadcastable` to your model. You have two approaches:
-
-#### Option A: Direct Broadcasting (More Control)
-
 ```ruby
 class Post < ApplicationRecord
   include Pulse::Broadcastable
-
-  # Direct broadcasts with custom payloads
-  after_create_commit  -> { broadcast_created_later_to([account, "posts"], payload: to_inertia_json) }
-  after_update_commit  -> { broadcast_updated_later_to([account, "posts"], payload: to_inertia_json) }
-  after_destroy_commit -> { broadcast_deleted_to([account, "posts"], payload: { id: id.to_s }) }
-
-  private
-
-  def to_inertia_json
-    {
-      id: id,
-      content: content,
-      state: state,
-      created_at: created_at.iso8601,
-      # ... other fields
-    }
-  end
-end
-```
-
-#### Option B: DSL Broadcasting (Simpler)
-
-```ruby
-class Post < ApplicationRecord
-  include Pulse::Broadcastable
-
-  # Broadcast to account-scoped channel
-  broadcasts_to ->(post) { [post.account, "posts"] }
-
-  # Or broadcast to a simple channel
-  broadcasts "posts"
+  
+  # Broadcast to a simple channel
+  broadcasts_to ->(post) { "posts" }
+  
+  # Or broadcast to account-scoped channel
+  # broadcasts_to ->(post) { [post.account, "posts"] }
 end
 ```
 
 ### 2. Pass Stream Token to Frontend
 
-In your controller, generate a signed stream token:
-
 ```ruby
 class PostsController < ApplicationController
   def index
-    @posts = Current.account.posts
-    @pulse_stream = Pulse::Streams::StreamName
-      .signed_stream_name([Current.account, "posts"])
+    @posts = Post.all
 
-    # The stream token is automatically available in your React component
+    render inertia: "Post/Index", props: {
+      posts: @posts.map do |post|
+        serialize_post(post)
+      end,
+      pulseStream: Pulse::Streams::StreamName.signed_stream_name("posts")
+    }
+  end
+  
+  private
+  
+  def serialize_post(post)
+    {
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      created_at: post.created_at
+    }
   end
 end
 ```
 
+**Why pulseStream?** Following Turbo Rails' security model, Pulse uses signed stream names to prevent unauthorized access to WebSocket channels. Since Inertia.js doesn't have a built-in way to access streams like Turbo does, we pass the signed stream name as a prop. This approach:
+- Maintains security through cryptographically signed tokens
+- Works naturally with Inertia's prop system
+- Keeps the API simple and explicit
+
 ### 3. Subscribe in React Component
 
-Use the `usePulse` hook to receive real-time updates:
-
 ```tsx
+import { useState } from 'react'
 import { usePulse } from '@/hooks/use-pulse'
 import { useVisibilityRefresh } from '@/hooks/use-visibility-refresh'
 import { router } from '@inertiajs/react'
 
-export default function Posts({ posts, pulseStream }) {
-  // Handle tab visibility (refreshes data when returning to tab)
+interface IndexProps {
+  posts: Array<{
+    id: number
+    title: string
+    content: string
+    created_at: string
+  }>
+  pulseStream: string
+  flash: {
+    success?: string
+    error?: string
+  }
+}
+
+export default function Index({ posts: initialPosts, flash, pulseStream }: IndexProps) {
+  // Use local state for posts to enable real-time updates
+  const [posts, setPosts] = useState(initialPosts)
+  
+  // Automatically refresh data when returning to the tab after 30+ seconds
+  // This ensures users see fresh data after being away, handling cases where
+  // WebSocket messages might have been missed during browser suspension
   useVisibilityRefresh(30, () => {
     router.reload({ only: ['posts'] })
   })
 
-  // Subscribe to real-time updates
+  // Subscribe to Pulse updates for real-time changes
   usePulse(pulseStream, (message) => {
     switch (message.event) {
       case 'created':
+        // Add the new post to the beginning of the list
+        setPosts(prev => [message.payload, ...prev])
+        break
       case 'updated':
+        // Replace the updated post in the list
+        setPosts(prev => 
+          prev.map(post => post.id === message.payload.id ? message.payload : post)
+        )
+        break
       case 'deleted':
-        // Reload posts from server
-        router.reload({ only: ['posts'] })
+        // Remove the deleted post from the list
+        setPosts(prev => 
+          prev.filter(post => post.id !== message.payload.id)
+        )
         break
       case 'refresh':
-        // Full page refresh
+        // Full reload for refresh events
         router.reload()
         break
     }
   })
-
+  
   return (
-    <div>
-      {posts.map(post => <PostCard key={post.id} post={post} />)}
-    </div>
+    <>
+      {flash.success && <div className="alert-success">{flash.success}</div>}
+      <PostsList posts={posts} />
+    </>
   )
 }
 ```
 
-## Message Events
+**Note:** This example shows optimistic UI updates using local state. Alternatively, you can use `router.reload({ only: ['posts'] })` for all events to fetch fresh data from the server, which ensures consistency but may feel less responsive.
+
+**Why useVisibilityRefresh?** When users switch tabs or minimize their browser, WebSocket connections can be suspended and messages may be lost. The `useVisibilityRefresh` hook detects when users return to your app and automatically refreshes the data if they've been away for more than the specified threshold (30 seconds in this example). This ensures users always see up-to-date information without manual refreshing.
+
+## Broadcasting Events
 
 Pulse broadcasts four types of events:
 
@@ -112,7 +144,7 @@ Pulse broadcasts four types of events:
 ```json
 {
   "event": "created",
-  "payload": { "id": 123, "content": "New post", ... },
+  "payload": { "id": 123, "content": "New post" },
   "requestId": "uuid-123",
   "at": 1234567890.123
 }
@@ -122,7 +154,7 @@ Pulse broadcasts four types of events:
 ```json
 {
   "event": "updated",
-  "payload": { "id": 123, "content": "Updated post", ... },
+  "payload": { "id": 123, "content": "Updated post" },
   "requestId": "uuid-456",
   "at": 1234567891.456
 }
@@ -148,6 +180,112 @@ Pulse broadcasts four types of events:
 }
 ```
 
+## Advanced Usage
+
+### Manual Broadcasting
+
+```ruby
+# Broadcast with custom payload
+post.broadcast_updated_to(
+  [Current.account, "posts"],
+  payload: { id: post.id, featured: true }
+)
+
+# Async broadcasting
+post.broadcast_updated_later_to([Current.account, "posts"])
+```
+
+### Suppress Broadcasts During Bulk Operations
+
+```ruby
+Post.suppressing_pulse_broadcasts do
+  Post.where(account: account).update_all(featured: true)
+end
+
+# Then send one refresh broadcast
+Post.new.broadcast_refresh_to([account, "posts"])
+```
+
+### Custom Serialization
+
+```ruby
+# config/initializers/pulse.rb
+Rails.application.configure do
+  config.pulse.serializer = ->(record) {
+    case record
+    when Post
+      record.as_json(only: [:id, :title, :state])
+    else
+      record.as_json
+    end
+  }
+end
+```
+
+## Configuration
+
+```ruby
+# config/initializers/pulse.rb
+Rails.application.configure do
+  # Debounce window in milliseconds (default: 300)
+  config.pulse.debounce_ms = 300
+  
+  # Background job queue (default: :default)
+  config.pulse.queue_name = :low
+  
+  # Custom serializer
+  config.pulse.serializer = ->(record) { record.as_json }
+end
+```
+
+## Browser Tab Handling
+
+Pulse includes sophisticated handling for browser tab suspension:
+
+- **Quick switches (<30s)**: Just ensures connection is alive
+- **Medium absence (30s-5min)**: Reconnects and syncs data
+- **Long absence (>5min)**: Full page refresh for consistency
+
+Platform-aware thresholds:
+- Desktop Chrome/Firefox: 30 seconds
+- Safari/Mobile: 15 seconds (more aggressive)
+
+## Testing
+
+```ruby
+# In your test files
+test "broadcasts on update" do
+  post = posts(:one)
+  
+  assert_broadcast_on([post.account, "posts"]) do
+    post.update!(title: "New Title")
+  end
+end
+
+# Suppress broadcasts in tests
+Post.suppressing_pulse_broadcasts do
+  # Your test code
+end
+```
+
+## Debugging
+
+Enable debug logging:
+
+```javascript
+// In browser console
+localStorage.setItem('PULSE_DEBUG', 'true')
+```
+
+Check connection health:
+
+```javascript
+import { getPulseMonitorStats } from '@/lib/pulse-connection'
+
+const stats = getPulseMonitorStats()
+console.log(stats)
+```
+
 ## Common Patterns
 
 ### Scoped Broadcasting
@@ -166,72 +304,31 @@ class Comment < ApplicationRecord
 end
 ```
 
-### Manual Broadcasting
+### Direct Broadcasting (More Control)
 
-Sometimes you need to broadcast manually:
+For more control over what gets broadcast:
 
 ```ruby
-class PostsController < ApplicationController
-  def approve
-    @post = Post.find(params[:id])
-    @post.approve!
+class Post < ApplicationRecord
+  include Pulse::Broadcastable
 
-    # Manual broadcast with custom payload
-    @post.broadcast_updated_to(
-      [Current.account, "posts"],
-      payload: { id: @post.id, approved: true }
-    )
+  # Direct broadcasts with custom payloads
+  after_create_commit  -> { broadcast_created_later_to([account, "posts"], payload: to_inertia_json) }
+  after_update_commit  -> { broadcast_updated_later_to([account, "posts"], payload: to_inertia_json) }
+  after_destroy_commit -> { broadcast_deleted_to([account, "posts"], payload: { id: id.to_s }) }
+
+  private
+
+  def to_inertia_json
+    {
+      id: id,
+      title: title,
+      content: content,
+      state: state,
+      created_at: created_at.iso8601
+    }
   end
 end
-```
-
-### Bulk Operations
-
-Suppress broadcasts during bulk operations to avoid flooding:
-
-```ruby
-# Bad - sends 1000 broadcasts
-Post.where(account: account).update_all(featured: true)
-
-# Good - suppresses broadcasts
-Post.suppressing_pulse_broadcasts do
-  Post.where(account: account).update_all(featured: true)
-end
-
-# Then send one refresh broadcast
-Post.new.broadcast_refresh_to([account, "posts"])
-```
-
-### Async Broadcasting
-
-For non-critical updates or heavy operations, use async broadcasting:
-
-```ruby
-class ProcessHeavyDataJob < ApplicationJob
-  def perform(post)
-    # Do heavy processing...
-    result = process_data(post)
-
-    # Broadcast asynchronously (via job queue)
-    post.broadcast_updated_later_to(
-      [post.account, "posts"],
-      payload: { id: post.id, processing_complete: true, result: result }
-    )
-  end
-end
-```
-
-## Frontend Patterns
-
-### Simple Reload
-
-The simplest approach - just reload the data:
-
-```tsx
-usePulse(pulseStream, (message) => {
-  // Reload posts array from server
-  router.reload({ only: ['posts'] })
-})
 ```
 
 ### Optimistic Updates
@@ -247,7 +344,7 @@ export default function PostsList({ posts: initialPosts, pulseStream }) {
   usePulse(pulseStream, (message) => {
     switch (message.event) {
       case 'created':
-        setPosts(prev => [...prev, message.payload])
+        setPosts(prev => [message.payload, ...prev])
         break
       case 'updated':
         setPosts(prev => prev.map(post =>
@@ -291,160 +388,6 @@ usePulse(pulseStream, (message) => {
 })
 ```
 
-## Browser Tab Handling
-
-Pulse includes sophisticated handling for browser tab suspension. Modern browsers suspend WebSocket connections in background tabs to save battery.
-
-### Automatic Recovery
-
-Use the `useVisibilityRefresh` hook to handle tab suspension:
-
-```tsx
-// Default: refresh after 30 seconds hidden
-useVisibilityRefresh(30, () => {
-  router.reload({ only: ['posts'] })
-})
-
-// Aggressive: refresh after 15 seconds (for critical data)
-useVisibilityRefresh(15, () => {
-  router.reload()
-})
-
-// Relaxed: refresh after 2 minutes
-useVisibilityRefresh(120, () => {
-  router.reload({ only: ['posts'] })
-})
-```
-
-### Platform-Specific Behavior
-
-- **Desktop Chrome/Firefox**: 30 second default threshold
-- **Safari/Mobile**: 15 second default (more aggressive suspension)
-
-## Configuration
-
-### Debounce Window
-
-Adjust how long Pulse waits to coalesce rapid updates:
-
-```ruby
-# config/initializers/pulse.rb
-Rails.application.configure do
-  # Default is 300ms
-  config.pulse.debounce_ms = 500
-end
-```
-
-### Job Queue
-
-Configure which queue processes async broadcasts:
-
-```ruby
-Rails.application.configure do
-  # Use low priority queue for broadcasts
-  config.pulse.queue_name = :low
-end
-```
-
-### Custom Serialization
-
-Control what data is sent in broadcasts:
-
-```ruby
-# config/initializers/pulse.rb
-Rails.application.configure do
-  config.pulse.serializer = ->(record) {
-    case record
-    when Post
-      {
-        id: record.id,
-        title: record.title,
-        state: record.state,
-        author: record.user.name,
-        updatedAt: record.updated_at.iso8601
-      }
-    when Comment
-      {
-        id: record.id,
-        content: record.content.truncate(100),
-        authorAvatar: record.user.avatar_url
-      }
-    else
-      record.as_json
-    end
-  }
-end
-```
-
-## Testing
-
-### Testing Model Broadcasts
-
-```ruby
-class PostTest < ActiveSupport::TestCase
-  test "broadcasts when published" do
-    post = posts(:draft)
-    account = accounts(:one)
-
-    # Create the expected stream name
-    stream = Pulse::Streams::StreamName.signed_stream_name([account, "posts"])
-
-    # Assert broadcast happens
-    assert_broadcast_on(stream) do
-      post.publish!
-    end
-  end
-
-  test "suppresses broadcasts in bulk operations" do
-    Post.suppressing_pulse_broadcasts do
-      # No broadcasts should happen here
-      Post.import(large_dataset)
-    end
-  end
-end
-```
-
-### Disable in Tests
-
-Broadcasts are automatically disabled in the test environment via:
-
-```ruby
-# config/initializers/pulse.rb
-if Rails.env.test?
-  ENV["PULSE_DISABLED"] = "true"
-end
-```
-
-## Debugging
-
-Enable debug logging:
-
-```javascript
-// In browser console
-localStorage.setItem('PULSE_DEBUG', 'true')
-
-// Now you'll see logs like:
-// [Pulse] Subscription connected: posts:123
-// [Pulse] Message received: {event: "updated", ...}
-// [Pulse] Connection lost, retrying in 2s...
-```
-
-Check connection health:
-
-```javascript
-import { getPulseMonitorStats } from '@/lib/pulse/pulse-connection'
-
-const stats = getPulseMonitorStats()
-console.log(stats)
-// {
-//   isRunning: true,
-//   isConnecting: false,
-//   reconnectAttempts: 0,
-//   secondsSinceActivity: 2.5,
-//   secondsSinceMessage: 5.1
-// }
-```
-
 ## Security Notes
 
 1. **Always use scoped streams** - Never broadcast to global channels
@@ -452,24 +395,6 @@ console.log(stats)
 3. **Verify authorization** - The channel uses your authentication setup
 4. **Sanitize payloads** - Don't include sensitive data in broadcasts
 5. **Use SSL in production** - WebSockets should run over WSS
-
-## Common Issues
-
-### Not receiving updates
-- Check WebSocket connection in Network tab
-- Verify stream name matches between backend and frontend
-- Ensure ActionCable is mounted in routes.rb
-- Check for authorization failures in Rails logs
-
-### Too many updates
-- Use debouncing (automatic within 300ms)
-- Implement conditional broadcasting
-- Use `suppressing_pulse_broadcasts` for bulk operations
-
-### Connection drops
-- Pulse automatically reconnects with exponential backoff
-- Check for SSL/proxy issues in production
-- Monitor server logs for WebSocket errors
 
 ## Authentication Setup
 
@@ -522,6 +447,34 @@ rescue JWT::DecodeError
   nil
 end
 ```
+
+## Common Issues
+
+### Not receiving updates
+- Check WebSocket connection in Network tab
+- Verify stream name matches between backend and frontend
+- Ensure ActionCable is mounted in routes.rb
+- Check for authorization failures in Rails logs
+
+### Too many updates
+- Use debouncing (automatic within 300ms)
+- Implement conditional broadcasting
+- Use `suppressing_pulse_broadcasts` for bulk operations
+
+### Connection drops
+- Pulse automatically reconnects with exponential backoff
+- Check for SSL/proxy issues in production
+- Monitor server logs for WebSocket errors
+
+## Philosophy
+
+Pulse Zero follows the same philosophy as [authentication-zero](https://github.com/lazaronixon/authentication-zero), and is heavily inspired by [Turbo Rails](https://github.com/hotwired/turbo-rails). The API design closely mirrors Turbo Rails patterns, making it intuitive for developers already familiar with the Hotwire ecosystem.
+
+- **Own your code**: All code is generated into your project
+- **No runtime dependencies**: The gem is only needed during generation
+- **Customizable**: Modify any generated code to fit your needs
+- **Production-ready**: Includes battle-tested patterns from real applications
+- **Familiar API**: Inspired by Turbo Rails, uses similar broadcasting patterns and conventions
 
 ## Next Steps
 
