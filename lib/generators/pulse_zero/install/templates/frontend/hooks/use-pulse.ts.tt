@@ -1,0 +1,66 @@
+import { useEffect, useRef } from 'react'
+import { subscribeToPulse, PulseMessage, PulseSubscription } from '@/lib/pulse/pulse'
+import { startPulseMonitor, stopPulseMonitor } from '@/lib/pulse/pulse-connection'
+
+/**
+ * React hook for subscribing to Pulse real-time updates
+ *
+ * @param signedStreamName - The signed stream name from the backend
+ * @param onMessage - Callback function to handle incoming messages
+ *
+ * @example
+ * ```tsx
+ * usePulse(pulseStream, (message) => {
+ *   switch (message.event) {
+ *     case 'created':
+ *     case 'updated':
+ *     case 'deleted':
+ *       router.reload({ only: ['posts'] })
+ *       break
+ *   }
+ * })
+ * ```
+ */
+export function usePulse(
+  signedStreamName: string | null | undefined,
+  onMessage: (message: PulseMessage) => void
+) {
+  const subscriptionRef = useRef<PulseSubscription | null>(null)
+  const callbackRef = useRef(onMessage)
+
+  // Update callback ref to avoid stale closures
+  useEffect(() => {
+    callbackRef.current = onMessage
+  })
+
+  useEffect(() => {
+    // Skip if no stream name
+    if (!signedStreamName) {
+      return
+    }
+
+    // Start connection monitor on first subscription
+    startPulseMonitor()
+
+    // Subscribe to the stream
+    subscriptionRef.current = subscribeToPulse(signedStreamName, (message) => {
+      callbackRef.current(message)
+    })
+
+    // Cleanup function
+    return () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe()
+        subscriptionRef.current = null
+      }
+    }
+  }, [signedStreamName])
+
+  // Stop monitor when component unmounts
+  useEffect(() => {
+    return () => {
+      // In a real app, you might want to keep the monitor running
+      // if other components are still using Pulse
+    }
+  }, [])
+}

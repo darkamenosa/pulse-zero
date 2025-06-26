@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+module ApplicationCable
+  class Connection < ActionCable::Connection::Base
+    identified_by :current_user
+
+    def connect
+      self.current_user = find_verified_user
+    end
+
+    private
+
+    def find_verified_user
+      # Default implementation that accepts all connections
+      # Replace this with your authentication logic
+
+      # Example 1: Allow all connections (development/testing)
+      # Return a simple identifier for the connection
+      "guest_#{SecureRandom.hex(8)}"
+
+      # Example 2: Devise authentication (if using Devise)
+      # if verified_user = env["warden"]&.user
+      #   verified_user
+      # else
+      #   reject_unauthorized_connection
+      # end
+
+      # Example 3: Session-based authentication
+      # if session[:user_id] && verified_user = User.find_by(id: session[:user_id])
+      #   verified_user
+      # else
+      #   reject_unauthorized_connection
+      # end
+
+      # Example 4: JWT token authentication
+      # if verified_user = User.find_by(id: decoded_jwt_user_id)
+      #   verified_user
+      # else
+      #   reject_unauthorized_connection
+      # end
+    end
+
+    # Helper method for JWT authentication (uncomment if needed)
+    # def decoded_jwt_user_id
+    #   token = request.params[:token] || request.headers["Authorization"]&.split(" ")&.last
+    #   return unless token
+    #
+    #   decoded = JWT.decode(token, Rails.application.secret_key_base, true, algorithm: "HS256")
+    #   decoded.first["user_id"]
+    # rescue JWT::DecodeError
+    #   nil
+    # end
+
+    # Helper method for session access (uncomment if needed)
+    # def session
+    #   cookies.encrypted[Rails.application.config.session_options[:key]]
+    # end
+  end
+end

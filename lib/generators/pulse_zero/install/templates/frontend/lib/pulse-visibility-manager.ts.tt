@@ -1,0 +1,143 @@
+/**
+ * Pulse Visibility Manager
+ *
+ * Manages tab visibility state and triggers appropriate actions when tabs
+ * become visible after being hidden. Handles browser quirks and edge cases.
+ */
+
+export interface VisibilityManagerOptions {
+  onVisible?: () => void
+  onHidden?: () => void
+  onStale?: () => void
+  staleThreshold?: number // seconds before considering data stale
+}
+
+export class PulseVisibilityManager {
+  private hiddenAt: number | null = null
+  private isHidden = false
+  private callbacks: Required<VisibilityManagerOptions>
+  private checkStaleTimeout: number | null = null
+
+  constructor(options: VisibilityManagerOptions = {}) {
+    this.callbacks = {
+      onVisible: options.onVisible || (() => {}),
+      onHidden: options.onHidden || (() => {}),
+      onStale: options.onStale || (() => {}),
+      staleThreshold: options.staleThreshold || 30
+    }
+
+    this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
+    this.handleFocus = this.handleFocus.bind(this)
+    this.handleBlur = this.handleBlur.bind(this)
+
+    this.setupListeners()
+    this.checkInitialState()
+  }
+
+  private setupListeners() {
+    if (typeof document !== 'undefined') {
+      // Primary: Page Visibility API
+      document.addEventListener('visibilitychange', this.handleVisibilityChange)
+
+      // Fallback: Focus/blur events
+      window.addEventListener('focus', this.handleFocus)
+      window.addEventListener('blur', this.handleBlur)
+    }
+  }
+
+  private checkInitialState() {
+    if (typeof document !== 'undefined') {
+      this.isHidden = document.hidden || !document.hasFocus()
+      if (this.isHidden) {
+        this.hiddenAt = Date.now()
+      }
+    }
+  }
+
+  private handleVisibilityChange() {
+    if (document.hidden) {
+      this.markHidden()
+    } else {
+      this.markVisible()
+    }
+  }
+
+  private handleFocus() {
+    // Only trigger if visibility API didn't already handle it
+    if (!document.hidden) {
+      this.markVisible()
+    }
+  }
+
+  private handleBlur() {
+    // Use a small delay to avoid false positives from quick focus changes
+    setTimeout(() => {
+      if (!document.hasFocus() && document.hidden) {
+        this.markHidden()
+      }
+    }, 100)
+  }
+
+  private markHidden() {
+    if (!this.isHidden) {
+      this.isHidden = true
+      this.hiddenAt = Date.now()
+      this.callbacks.onHidden()
+
+      // Clear any pending stale check
+      if (this.checkStaleTimeout) {
+        clearTimeout(this.checkStaleTimeout)
+        this.checkStaleTimeout = null
+      }
+    }
+  }
+
+  private markVisible() {
+    if (this.isHidden) {
+      this.isHidden = false
+      const hiddenDuration = this.hiddenAt ? (Date.now() - this.hiddenAt) / 1000 : 0
+
+      this.callbacks.onVisible()
+
+      // Check if data might be stale
+      if (hiddenDuration >= this.callbacks.staleThreshold) {
+        // Small delay to allow connection to stabilize
+        this.checkStaleTimeout = window.setTimeout(() => {
+          this.callbacks.onStale()
+          this.checkStaleTimeout = null
+        }, 500)
+      }
+
+      this.hiddenAt = null
+    }
+  }
+
+  getHiddenDuration(): number {
+    if (!this.isHidden || !this.hiddenAt) {
+      return 0
+    }
+    return (Date.now() - this.hiddenAt) / 1000
+  }
+
+  isCurrentlyHidden(): boolean {
+    return this.isHidden
+  }
+
+  cleanup() {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+      window.removeEventListener('focus', this.handleFocus)
+      window.removeEventListener('blur', this.handleBlur)
+    }
+
+    if (this.checkStaleTimeout) {
+      clearTimeout(this.checkStaleTimeout)
+      this.checkStaleTimeout = null
+    }
+  }
+}
+
+// Factory function for easier usage
+export function createPulseVisibilityManager(options: VisibilityManagerOptions) {
+  return new PulseVisibilityManager(options)
+}

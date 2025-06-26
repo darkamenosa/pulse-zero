@@ -1,0 +1,34 @@
+# frozen_string_literal: true
+
+module Pulse::Streams::StreamName
+  extend self
+
+  # Used by Pulse::Channel to verify a signed stream name
+  def verified_stream_name(signed_stream_name)
+    Pulse.signed_stream_verifier.verified signed_stream_name
+  rescue ActiveSupport::MessageVerifier::InvalidSignature
+    nil
+  end
+
+  # Used to generate a signed stream name from streamables
+  def signed_stream_name(streamables)
+    Pulse.signed_stream_verifier.generate stream_name_from(streamables)
+  end
+
+  module ClassMethods
+    # Can be used by custom channels to obtain signed stream name from params
+    def verified_stream_name_from_params
+      Pulse::Streams::StreamName.verified_stream_name(params[:'signed-stream-name'])
+    end
+  end
+
+  private
+
+  def stream_name_from(streamables)
+    if streamables.is_a?(Array)
+      streamables.map { |streamable| stream_name_from(streamable) }.join(":")
+    else
+      streamables.then { |streamable| streamable.try(:to_gid_param) || streamable.to_param }
+    end
+  end
+end

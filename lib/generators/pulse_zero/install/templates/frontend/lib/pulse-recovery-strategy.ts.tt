@@ -1,0 +1,156 @@
+/**
+ * Pulse Recovery Strategy
+ *
+ * Implements platform-aware recovery strategies for handling browser tab suspension
+ * and connection issues. Based on patterns from Facebook, Twitter, and other major platforms.
+ */
+
+export interface RecoveryAction {
+  type: 'none' | 'reconnect' | 'sync' | 'refresh'
+  delay: number
+  reason: string
+}
+
+export class PulseRecoveryStrategy {
+  // Platform-specific thresholds (in seconds)
+  private static readonly THRESHOLDS = {
+    // Safari and mobile browsers are more aggressive with suspension
+    safari: {
+      quick: 15,    // Quick tab switch
+      medium: 60,   // Medium absence
+      long: 300     // Long absence (5 min)
+    },
+    // Desktop Chrome/Firefox are more lenient
+    default: {
+      quick: 30,    // Quick tab switch
+      medium: 300,  // Medium absence (5 min)
+      long: 900     // Long absence (15 min)
+    }
+  }
+
+  // Exponential backoff with jitter
+  private static readonly BACKOFF_BASE = 1000 // 1 second
+  private static readonly BACKOFF_MAX = 60000 // 60 seconds
+  private static readonly JITTER_FACTOR = 0.3
+
+  /**
+   * Determine the recovery action based on how long the tab was hidden
+   */
+  static getRecoveryAction(hiddenDurationSeconds: number): RecoveryAction {
+    const thresholds = this.getCurrentThresholds()
+
+    if (hiddenDurationSeconds < thresholds.quick) {
+      // Quick switch - just ensure connection is alive
+      return {
+        type: 'none',
+        delay: 0,
+        reason: 'Quick tab switch, no recovery needed'
+      }
+    }
+
+    if (hiddenDurationSeconds < thresholds.medium) {
+      // Medium absence - reconnect and maybe sync
+      return {
+        type: 'sync',
+        delay: this.calculateDelay(1),
+        reason: `Hidden for ${Math.round(hiddenDurationSeconds)}s, syncing data`
+      }
+    }
+
+    // Long absence - full refresh for consistency
+    return {
+      type: 'refresh',
+      delay: this.calculateDelay(2),
+      reason: `Hidden for ${Math.round(hiddenDurationSeconds)}s, full refresh needed`
+    }
+  }
+
+  /**
+   * Get platform-specific thresholds
+   */
+  private static getCurrentThresholds() {
+    if (typeof window === 'undefined') {
+      return this.THRESHOLDS.default
+    }
+
+    const ua = window.navigator.userAgent.toLowerCase()
+
+    // Safari detection (including iOS)
+    if (ua.includes('safari') && !ua.includes('chrome')) {
+      return this.THRESHOLDS.safari
+    }
+
+    // Mobile detection
+    if (/mobile|android|iphone|ipad/i.test(ua)) {
+      return this.THRESHOLDS.safari // Use aggressive thresholds for mobile
+    }
+
+    return this.THRESHOLDS.default
+  }
+
+  /**
+   * Calculate delay with exponential backoff and jitter
+   */
+  private static calculateDelay(attemptNumber: number): number {
+    const exponentialDelay = Math.min(
+      this.BACKOFF_BASE * Math.pow(2, attemptNumber - 1),
+      this.BACKOFF_MAX
+    )
+
+    // Add jitter to prevent thundering herd
+    const jitter = exponentialDelay * this.JITTER_FACTOR * (Math.random() * 2 - 1)
+
+    return Math.round(exponentialDelay + jitter)
+  }
+
+  /**
+   * Get recommended visibility refresh threshold for the current platform
+   */
+  static getRecommendedThreshold(): number {
+    const thresholds = this.getCurrentThresholds()
+    return thresholds.quick
+  }
+
+  /**
+   * Check if we should use aggressive recovery (for Safari/mobile)
+   */
+  static shouldUseAggressiveRecovery(): boolean {
+    const thresholds = this.getCurrentThresholds()
+    return thresholds === this.THRESHOLDS.safari
+  }
+
+  /**
+   * Get human-readable platform detection info
+   */
+  static getPlatformInfo(): {
+    platform: 'safari' | 'mobile' | 'desktop'
+    thresholds: typeof PulseRecoveryStrategy.THRESHOLDS.default
+    aggressive: boolean
+  } {
+    const thresholds = this.getCurrentThresholds()
+    const isSafari = thresholds === this.THRESHOLDS.safari
+
+    if (typeof window === 'undefined') {
+      return {
+        platform: 'desktop',
+        thresholds,
+        aggressive: false
+      }
+    }
+
+    const ua = window.navigator.userAgent.toLowerCase()
+
+    let platform: 'safari' | 'mobile' | 'desktop' = 'desktop'
+    if (ua.includes('safari') && !ua.includes('chrome')) {
+      platform = 'safari'
+    } else if (/mobile|android|iphone|ipad/i.test(ua)) {
+      platform = 'mobile'
+    }
+
+    return {
+      platform,
+      thresholds,
+      aggressive: isSafari
+    }
+  }
+}

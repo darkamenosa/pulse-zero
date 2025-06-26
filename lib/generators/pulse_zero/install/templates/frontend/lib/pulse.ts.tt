@@ -1,0 +1,130 @@
+import { createConsumer, Consumer, Subscription } from "@rails/actioncable"
+
+export interface PulseMessage {
+  event: 'created' | 'updated' | 'deleted' | 'refresh'
+  payload: any
+  requestId?: string
+  at: number
+}
+
+export interface PulseSubscription {
+  unsubscribe: () => void
+}
+
+class PulseManager {
+  private consumer: Consumer | null = null
+  private subscriptions: Map<string, Subscription> = new Map()
+  private debug = false
+
+  constructor() {
+    // Enable debug logging if localStorage flag is set
+    if (typeof window !== 'undefined' && localStorage.getItem('PULSE_DEBUG') === 'true') {
+      this.debug = true
+    }
+  }
+
+  private log(message: string, data?: any) {
+    if (this.debug) {
+      console.log(`[Pulse] ${message}`, data || '')
+    }
+  }
+
+  private getConsumer(): Consumer {
+    if (!this.consumer) {
+      this.consumer = createConsumer()
+      this.log('Consumer created')
+    }
+    return this.consumer
+  }
+
+  subscribe(
+    signedStreamName: string,
+    onMessage: (message: PulseMessage) => void
+  ): PulseSubscription {
+    const consumer = this.getConsumer()
+
+    // Unsubscribe from existing subscription if any
+    const existingSubscription = this.subscriptions.get(signedStreamName)
+    if (existingSubscription) {
+      existingSubscription.unsubscribe()
+      this.subscriptions.delete(signedStreamName)
+      this.log('Unsubscribed from existing subscription', signedStreamName)
+    }
+
+    // Create new subscription
+    const subscription = consumer.subscriptions.create(
+      {
+        channel: "Pulse::Channel",
+        "signed-stream-name": signedStreamName
+      },
+      {
+        connected: () => {
+          this.log('Subscription connected', signedStreamName)
+          touchActivity()
+        },
+        disconnected: () => {
+          this.log('Subscription disconnected', signedStreamName)
+        },
+        received: (data: string) => {
+          try {
+            touchActivity()
+            const message = JSON.parse(data) as PulseMessage
+            this.log('Message received', message)
+            onMessage(message)
+          } catch (error) {
+            console.error('[Pulse] Failed to parse message:', error)
+          }
+        }
+      }
+    )
+
+    this.subscriptions.set(signedStreamName, subscription)
+
+    return {
+      unsubscribe: () => {
+        subscription.unsubscribe()
+        this.subscriptions.delete(signedStreamName)
+        this.log('Subscription removed', signedStreamName)
+      }
+    }
+  }
+
+  disconnect() {
+    this.subscriptions.forEach(subscription => {
+      subscription.unsubscribe()
+    })
+    this.subscriptions.clear()
+
+    if (this.consumer) {
+      this.consumer.disconnect()
+      this.consumer = null
+      this.log('Consumer disconnected')
+    }
+  }
+}
+
+// Singleton instance
+const pulseManager = new PulseManager()
+
+// Export functions
+export function subscribeToPulse(
+  signedStreamName: string,
+  onMessage: (message: PulseMessage) => void
+): PulseSubscription {
+  return pulseManager.subscribe(signedStreamName, onMessage)
+}
+
+export function disconnectPulse() {
+  pulseManager.disconnect()
+}
+
+// Activity tracking for connection monitoring
+let lastActivity = Date.now()
+
+export function touchActivity() {
+  lastActivity = Date.now()
+}
+
+export function getLastActivity(): number {
+  return lastActivity
+}

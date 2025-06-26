@@ -1,0 +1,43 @@
+# frozen_string_literal: true
+
+Rails.application.configure do
+  # Configure Pulse real-time broadcasting
+  # Note: Pulse module must be loaded from lib/pulse.rb
+
+  if defined?(Pulse)
+    # Debounce window in milliseconds
+    # This prevents rapid-fire broadcasts from overwhelming clients
+    Pulse.config.debounce_ms = 300
+
+    # Background job queue name
+    # Use a lower priority queue if broadcasts are not time-critical
+    Pulse.config.queue_name = :default
+
+    # Custom serializer for broadcast payloads
+    # Return a hash that will be sent to the frontend
+    # Default: ->(rec) { rec.as_json }
+    #
+    # Pulse.config.serializer = lambda do |record|
+    #   case record
+    #   when Post
+    #     {
+    #       id: record.id,
+    #       title: record.title,
+    #       content: record.content,
+    #       state: record.state,
+    #       author_name: record.user.name,
+    #       updated_at: record.updated_at.iso8601
+    #     }
+    #   else
+    #     record.as_json
+    #   end
+    # end
+
+    # Disable broadcasts in test environment
+    if Rails.env.test?
+      ENV["PULSE_DISABLED"] = "true"
+    end
+  else
+    Rails.logger.warn "[Pulse] Module not loaded. Ensure lib is in autoload paths and pulse.rb exists."
+  end
+end

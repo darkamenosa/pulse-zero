@@ -1,0 +1,61 @@
+import { useEffect, useRef } from "react"
+import { createPulseVisibilityManager } from "@/lib/pulse/pulse-visibility-manager"
+
+/**
+ * Refreshes the page when the browser tab becomes visible after being hidden
+ * for longer than the threshold duration. This prevents unnecessary refreshes
+ * when quickly switching between tabs.
+ *
+ * Uses the same strategies as Facebook/Twitter to handle browser tab suspension:
+ * - Tracks actual hidden duration (not just WebSocket staleness)
+ * - Handles both Page Visibility API and focus/blur events
+ * - Cleans up properly to prevent memory leaks
+ *
+ * @param thresholdSeconds  Number of seconds the tab must be hidden before
+ *                          triggering a refresh on return (default: 30).
+ * @param refresh           Callback executed when the page should be refreshed.
+ *
+ * @example
+ * ```tsx
+ * // In your page component
+ * useVisibilityRefresh(30, () => {
+ *   router.reload({ only: ['posts'] })
+ * })
+ *
+ * // With custom threshold for critical data
+ * useVisibilityRefresh(15, () => {
+ *   router.reload()
+ * })
+ * ```
+ */
+export function useVisibilityRefresh(
+  thresholdSeconds: number = 30,
+  refresh: () => void
+) {
+  const managerRef = useRef<ReturnType<typeof createPulseVisibilityManager> | null>(null)
+
+  useEffect(() => {
+    // Create visibility manager with our config
+    managerRef.current = createPulseVisibilityManager({
+      onVisible: () => {
+        // Tab became visible - manager will check if refresh needed
+      },
+      onHidden: () => {
+        // Tab became hidden - manager tracks this
+      },
+      onStale: () => {
+        // Data is stale, trigger refresh
+        refresh()
+      },
+      staleThreshold: thresholdSeconds
+    })
+
+    // Cleanup on unmount
+    return () => {
+      if (managerRef.current) {
+        managerRef.current.cleanup()
+        managerRef.current = null
+      }
+    }
+  }, [thresholdSeconds, refresh])
+}

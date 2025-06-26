@@ -1,0 +1,43 @@
+# frozen_string_literal: true
+
+require "rails/engine"
+
+module Pulse
+  class Engine < Rails::Engine
+    isolate_namespace Pulse
+
+    config.pulse = ActiveSupport::OrderedOptions.new
+    config.pulse.queue_name = :default
+    config.pulse.debounce_ms = 300
+    config.pulse.serializer = ->(rec) { rec.as_json }
+
+    # Autoload paths for Pulse components
+    config.autoload_once_paths = %W[
+      #{root}/app/channels
+      #{root}/app/controllers/concerns
+      #{root}/app/models/concerns
+      #{root}/app/jobs
+    ]
+
+    # Don't eager load jobs if ActiveJob is not available
+    initializer "pulse.no_active_job", before: :set_eager_load_paths do
+      unless defined?(ActiveJob)
+        config.eager_load_paths.delete("#{root}/app/jobs")
+      end
+    end
+
+    # Don't eager load channels if ActionCable is not available
+    initializer "pulse.no_action_cable", before: :set_eager_load_paths do
+      unless defined?(ActionCable)
+        config.eager_load_paths.delete("#{root}/app/channels")
+      end
+    end
+
+    # Set up configuration after Rails loads
+    initializer "pulse.configure" do
+      if defined?(Rails) && Rails.application
+        Pulse.config = config.pulse
+      end
+    end
+  end
+end

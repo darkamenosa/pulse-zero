@@ -1,0 +1,17 @@
+# frozen_string_literal: true
+
+module Pulse
+  module RequestIdTracking
+    extend ActiveSupport::Concern
+
+    included do
+      before_action :set_pulse_request_id
+    end
+
+    private
+
+    def set_pulse_request_id
+      Current.pulse_request_id = request.uuid if defined?(Current) && Current.respond_to?(:pulse_request_id=)
+    end
+  end
+end

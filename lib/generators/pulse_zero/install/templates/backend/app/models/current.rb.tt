@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+class Current < ActiveSupport::CurrentAttributes
+  attribute :pulse_request_id
+
+  # Add other attributes as needed for your application
+  # attribute :account
+  # attribute :request
+end

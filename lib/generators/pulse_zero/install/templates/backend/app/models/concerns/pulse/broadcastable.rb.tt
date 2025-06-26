@@ -1,0 +1,85 @@
+# frozen_string_literal: true
+
+module Pulse::Broadcastable
+  extend ActiveSupport::Concern
+  include Pulse::Streams::Broadcasts
+
+  included do
+    thread_mattr_accessor :suppressed_pulse_broadcasts, instance_accessor: false
+  end
+
+  def suppressed_pulse_broadcasts?
+    self.class.suppressed_pulse_broadcasts
+  end
+
+  class_methods do
+    # Configures the model to broadcast creates, updates, and destroys
+    def broadcasts_to(stream, **rendering)
+      after_create_commit  -> { broadcast_created_later_to(stream.try(:call, self) || send(stream), **rendering) }
+      after_update_commit  -> { broadcast_updated_later_to(stream.try(:call, self) || send(stream), **rendering) }
+      after_destroy_commit -> { broadcast_deleted_to(stream.try(:call, self) || send(stream), **rendering) }
+    end
+
+    def broadcasts(stream = model_name.plural, **rendering)
+      broadcasts_to(stream, **rendering)
+    end
+
+    def broadcasts_refreshes_to(stream, **rendering)
+      after_commit -> { broadcast_refresh_later_to(stream.try(:call, self) || send(stream), **rendering) }
+    end
+
+    # Suppress broadcasts during bulk operations
+    def suppressing_pulse_broadcasts(&block)
+      original, self.suppressed_pulse_broadcasts = self.suppressed_pulse_broadcasts, true
+      yield
+    ensure
+      self.suppressed_pulse_broadcasts = original
+    end
+  end
+
+  # Instance methods with payload extraction
+  def broadcast_created_to(*streamables, **rendering)
+    broadcast_event_to(*streamables, event: :created, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_updated_to(*streamables, **rendering)
+    broadcast_event_to(*streamables, event: :updated, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_deleted_to(*streamables, **rendering)
+    broadcast_event_to(*streamables, event: :deleted, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_refresh_to(*streamables, **rendering)
+    broadcast_event_to(*streamables, event: :refresh, payload: {}, **rendering)
+  end
+
+  # Async variants
+  def broadcast_created_later_to(*streamables, **rendering)
+    broadcast_event_later_to(*streamables, event: :created, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_updated_later_to(*streamables, **rendering)
+    broadcast_event_later_to(*streamables, event: :updated, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_deleted_later_to(*streamables, **rendering)
+    broadcast_event_later_to(*streamables, event: :deleted, **extract_options_and_add_payload(rendering))
+  end
+
+  def broadcast_refresh_later_to(*streamables, **rendering)
+    broadcast_event_later_to(*streamables, event: :refresh, payload: {}, **rendering)
+  end
+
+  private
+
+  def extract_options_and_add_payload(rendering = {})
+    return rendering if suppressed_pulse_broadcasts?
+
+    rendering.tap do |opts|
+      # Use custom payload if provided, otherwise use serialized model
+      opts[:payload] ||= Pulse.serializer.call(self)
+      opts[:request_id] ||= Current.pulse_request_id if defined?(Current.pulse_request_id)
+    end
+  end
+end

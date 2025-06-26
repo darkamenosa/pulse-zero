@@ -1,0 +1,28 @@
+# frozen_string_literal: true
+
+module Pulse
+  class BroadcastJob < ApplicationJob
+    queue_as { Pulse.config.queue_name }
+
+    discard_on ActiveJob::DeserializationError
+
+    retry_on StandardError, wait: :polynomially_longer, attempts: 5
+
+    def perform(streamables:, event:, payload:, request_id: nil)
+      return if ENV["PULSE_DISABLED"] == "true"
+
+      stream = Pulse::Streams::StreamName.signed_stream_name(streamables)
+      message = {
+        event: event,
+        payload: payload,
+        requestId: request_id,
+        at: Time.current.to_f
+      }
+
+      ActionCable.server.broadcast(stream, message.to_json)
+    rescue => e
+      Rails.logger.error "[Pulse] Broadcast job error: #{e.message}"
+      raise
+    end
+  end
+end

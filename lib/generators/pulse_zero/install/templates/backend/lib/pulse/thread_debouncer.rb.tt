@@ -1,0 +1,31 @@
+# frozen_string_literal: true
+
+module Pulse
+  class ThreadDebouncer
+    def self.for(key, **opt)
+      Thread.current[key] ||= new(key, Thread.current, **opt)
+    end
+    private_class_method :new
+
+    def initialize(key, thread, delay: 0.3)
+      @key, @thread = key, thread
+      @delay = delay
+      @timer = nil
+      @mutex = Mutex.new
+    end
+
+    def debounce(&blk)
+      @mutex.synchronize do
+        @timer&.kill
+        @timer = Thread.new do
+          sleep @delay
+          blk.call
+        end.tap { Thread.current[@key] = nil }
+      end
+    end
+
+    def wait
+      @timer&.join
+    end
+  end
+end

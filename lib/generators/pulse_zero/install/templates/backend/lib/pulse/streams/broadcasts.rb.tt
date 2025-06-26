@@ -1,0 +1,80 @@
+# frozen_string_literal: true
+
+module Pulse::Streams::Broadcasts
+  include Pulse::Streams::StreamName
+
+  def broadcast_created_to(*streamables, **opts)
+    broadcast_event_to(*streamables, event: :created, **opts)
+  end
+
+  def broadcast_updated_to(*streamables, **opts)
+    broadcast_event_to(*streamables, event: :updated, **opts)
+  end
+
+  def broadcast_deleted_to(*streamables, **opts)
+    broadcast_event_to(*streamables, event: :deleted, **opts)
+  end
+
+  def broadcast_refresh_to(*streamables, **opts)
+    broadcast_event_to(*streamables, event: :refresh, payload: {}, **opts)
+  end
+
+  # Async variants
+  def broadcast_created_later_to(*streamables, **opts)
+    broadcast_event_later_to(*streamables, event: :created, **opts)
+  end
+
+  def broadcast_updated_later_to(*streamables, **opts)
+    broadcast_event_later_to(*streamables, event: :updated, **opts)
+  end
+
+  def broadcast_deleted_later_to(*streamables, **opts)
+    broadcast_event_later_to(*streamables, event: :deleted, **opts)
+  end
+
+  def broadcast_refresh_later_to(*streamables, **opts)
+    broadcast_event_later_to(*streamables, event: :refresh, payload: {}, **opts)
+  end
+
+  def broadcast_event_to(*streamables, event:, payload: nil, request_id: nil)
+    broadcast_stream_to(*streamables,
+      event: event,
+      payload: payload,
+      request_id: request_id
+    )
+  end
+
+  def broadcast_event_later_to(*streamables, **opts)
+    if defined?(Pulse::BroadcastJob)
+      streamables.flatten!
+      streamables.compact!
+      Pulse::BroadcastJob.perform_later(streamables: streamables, **opts)
+    else
+      broadcast_event_to(*streamables, **opts)
+    end
+  end
+
+  def broadcast_stream_to(*streamables, event:, payload:, request_id: nil)
+    streamables.flatten!
+    streamables.compact!
+
+    return if streamables.empty?
+    return if ENV["PULSE_DISABLED"] == "true"
+
+    stream = signed_stream_name(streamables)
+    message = {
+      event: event,
+      payload: payload,
+      requestId: request_id,
+      at: Time.current.to_f
+    }
+
+    if defined?(Pulse::ThreadDebouncer)
+      Pulse::ThreadDebouncer.for(stream).debounce do
+        ActionCable.server.broadcast(stream, message.to_json)
+      end
+    else
+      ActionCable.server.broadcast(stream, message.to_json)
+    end
+  end
+end

@@ -1,0 +1,38 @@
+# frozen_string_literal: true
+
+module Pulse
+  extend ActiveSupport::Autoload
+
+  autoload :Engine, "pulse/engine"
+  autoload :ThreadDebouncer, "pulse/thread_debouncer"
+
+  module Streams
+    extend ActiveSupport::Autoload
+
+    autoload :Broadcasts, "pulse/streams/broadcasts"
+    autoload :StreamName, "pulse/streams/stream_name"
+  end
+
+  # Configuration
+  mattr_accessor :config
+  self.config = ActiveSupport::OrderedOptions.new
+  config.queue_name = :default
+  config.debounce_ms = 300
+  config.serializer = ->(rec) { rec.as_json }
+
+  # Thread-safe stream verifier
+  class << self
+    attr_writer :signed_stream_verifier
+
+    def signed_stream_verifier
+      @signed_stream_verifier ||= begin
+        key = Rails.application.secret_key_base
+        ActiveSupport::MessageVerifier.new(key, serializer: JSON)
+      end
+    end
+
+    def serializer
+      config.serializer
+    end
+  end
+end
