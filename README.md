@@ -6,6 +6,8 @@ Real-time broadcasting generator for Rails + Inertia.js applications. Generate a
 
 Pulse Zero generates a complete real-time broadcasting system directly into your Rails application. Unlike traditional gems, all code is copied into your project, giving you full ownership and the ability to customize everything.
 
+Inspired by Turbo Rails, Pulse Zero brings familiar broadcasting patterns to Inertia.js applications. If you've used `broadcasts_to` in Turbo Rails, you'll feel right at home with Pulse Zero's API.
+
 Features:
 - 🚀 WebSocket broadcasting via ActionCable
 - 🔒 Secure signed streams
@@ -13,6 +15,7 @@ Features:
 - 🔄 Automatic reconnection with exponential backoff
 - 📦 TypeScript support for Inertia + React
 - 🎯 Zero runtime dependencies
+- 🏗️ Turbo Rails-inspired API design
 
 ## Installation
 
@@ -265,12 +268,13 @@ console.log(stats)
 
 ## Philosophy
 
-Pulse Zero follows the same philosophy as [authentication-zero](https://github.com/lazaronixon/authentication-zero):
+Pulse Zero follows the same philosophy as [authentication-zero](https://github.com/lazaronixon/authentication-zero), and is heavily inspired by [Turbo Rails](https://github.com/hotwired/turbo-rails). The API design closely mirrors Turbo Rails patterns, making it intuitive for developers already familiar with the Hotwire ecosystem.
 
 - **Own your code**: All code is generated into your project
 - **No runtime dependencies**: The gem is only needed during generation
 - **Customizable**: Modify any generated code to fit your needs
 - **Production-ready**: Includes battle-tested patterns from real applications
+- **Familiar API**: Inspired by Turbo Rails, uses similar broadcasting patterns and conventions
 
 ## Contributing
 
