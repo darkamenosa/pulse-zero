@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-06-26
+
+### Changed
+- Updated README.md with clearer explanations and better examples
+- Improved post-installation message to reflect README content
+- Enhanced PULSE_USAGE.md template with philosophy and comprehensive examples
+- Reorganized project documentation structure
+
+### Removed
+- Removed redundant SUMMARY.md and FIX_SUMMARY.md files
+- Moved EXAMPLES.md to docs/ directory for cleaner project root
+
+## [0.3.1] - 2025-06-26
+
+### Fixed
+- Fixed RuboCop linting issues
+
+### Changed
+- Minor documentation improvements
+
 ## [0.3.0] - 2025-01-26
 
 ### Changed
@@ -87,5 +107,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive documentation
 - Test helpers and examples
 
-[Unreleased]: https://github.com/yourusername/pulse_zero/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yourusername/pulse_zero/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/yourusername/pulse_zero/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/yourusername/pulse_zero/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/yourusername/pulse_zero/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/yourusername/pulse_zero/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/yourusername/pulse_zero/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/yourusername/pulse_zero/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/yourusername/pulse_zero/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yourusername/pulse_zero/releases/tag/v0.1.0
